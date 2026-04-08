@@ -68,6 +68,9 @@ gen3_projects_with_multiple_datasets - ls all projects that have more than 1 dat
 gen3_refresh_api_key.py - Nice try, but doesn't work. You don't seem to be able to do this in GEN3.
     Will need to figure out admin users so we don't have to refresh an api key every month.
 
+# These next 3 are specific to our GEN3 data dictionary, which has an "application_url" field
+# that the user clicks on in order to apply for access - these scripts adjust this field. As
+# someone else's data dictionary will be different, you'll need to adjust this accordingly.
 gen3_set_application_url_dataset - Set the application_form datapoint for a dataset to a REMs application
     or an explicit URL
 gen3_set_application_url_all - Set all application_form datapoints to the corresponding REMS application
