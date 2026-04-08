@@ -76,6 +76,9 @@ gen3_set_application_url_dataset - Set the application_form datapoint for a data
 gen3_set_application_url_all - Set all application_form datapoints to the corresponding REMS application
 gen3_set_application_url_project - Set all application_form datapoints for datasets in a given project
 
+# And this one is doubly specific to our situation and will need adjusting for any other situation.
+# Note that in particular it doesn't do any "adjusting" of anything that might have changed in GEN3 -
+# just new stuff.
 gen3_sync - For any new resource IDs in GEN3 that aren't already in REMS, create a resource and
     an application item. Optionally, go back to GEN3 and set the application_form datapoint to
     the REMS application URL for that dataset.
