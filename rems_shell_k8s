@@ -1,0 +1,37 @@
+# Shell into the rems pod
+#
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+REMS_NS=${REMS_NS:=rems-test}
+
+echo KUBECONFIG=$KUBECONFIG
+echo Namespace=$REMS_NS
+REMS_APP=rems-app-
+
+N=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | wc -l)
+POD=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | awk '{print $1}')
+
+((N==0)) && {
+    echo No pod matching "$REMS_APP"
+    exit 1
+}
+
+((N==1)) || {
+    echo Error: Multiple running pods matching "$REMS_APP"
+    exit 1
+}
+
+
+echo "Entering pod shell"
+echo "Some common commands to run in REMS ..."
+cat << EOF
+    java -Drems.config=config/config.edn -jar rems.jar list-users
+    java -Drems.config=config/config.edn -jar rems.jar grant-role owner <user_id>
+    java -Drems.config=config/config.edn -jar rems.jar api-key add <api_key>
+EOF
+echo
+
+CMD="bash"
+kubectl exec -it $POD -n $REMS_NS -- $CMD

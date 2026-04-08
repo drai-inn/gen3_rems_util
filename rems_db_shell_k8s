@@ -1,0 +1,29 @@
+# Shell into the rems postgres database pod
+#
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+REMS_NS=postgres
+
+echo KUBECONFIG=$KUBECONFIG
+echo Namespace=$REMS_NS
+
+PAT=postgres
+
+N=$(kubectl get pods -n $REMS_NS  --no-headers | grep $PAT | wc -l)
+
+((N==0)) && {
+    echo No pod matching "$PAT"
+    exit 1
+}
+
+((N==1)) || {
+    echo Multiple pods matching "$PAT"
+    kubectl get pods -n $REMS_NS  --no-headers | grep $PAT
+    exit 1
+}
+
+POD=$(kubectl get pods -n $REMS_NS  --no-headers | grep $PAT | awk '{print $1}')
+
+kubectl exec -it $POD -n $REMS_NS -- bash

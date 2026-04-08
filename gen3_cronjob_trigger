@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Kick off a k8s cronjob
+
+: ${KUBECONFIG:?}
+
+(($#==1)) || {
+    echo "Usage: $0 <cronjob-name>"
+    echo "Usage: $0 -l # to see candidates (matching \"cron\")"
+    exit 1
+}
+
+CJ_NAME="$1"
+
+[[ "$CJ_NAME" = "-l" ]] && {
+    kubectl get cronjobs -A
+    exit
+}
+
+# Get the NS of this job
+NS=$(kubectl get cronjobs -A -o jsonpath='{.items[?(@.metadata.name=="'$CJ_NAME'")].metadata.namespace}')
+
+NUM=$(echo "$NS" | wc -l)
+((NUM == 0)) && {
+    echo "No cronjob found matching $CJ_NAME"
+    exit 1
+}
+((NUM > 1)) && {
+    echo "Multiple cronjobs found matching $CJ_NAME"
+    exit 1
+}
+
+[[ -z $NS ]] && {
+    echo "Can't find namespace"
+    exit 1
+}
+
+JOB_NAME="${CJ_NAME}-manual-$(date +%F-%H%M%S)"
+
+kubectl create job --from=cronjob/$CJ_NAME "${JOB_NAME}" -n $NS

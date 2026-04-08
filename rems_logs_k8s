@@ -1,0 +1,26 @@
+# Show logs from the rems-app- pod
+# in the $REMS_NS namespace
+# use the -f argument to follow the logs (as in tail -f)
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+REMS_APP=rems-app-
+
+MINUS_CLAUSE=""
+(($#==1)) && [[ "$1" = "-f" ]] && MINUS_CLAUSE="-f"
+
+N=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | wc -l)
+POD=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | awk '{print $1}')
+
+((N==0)) && {
+    echo No pod matching "$REMS_APP"
+    exit 1
+}
+
+((N==1)) || {
+    echo Error: Multiple running pods matching "$REMS_APP"
+    exit 1
+}
+
+kubectl logs $MINUS_CLAUSE $POD -n $REMS_NS

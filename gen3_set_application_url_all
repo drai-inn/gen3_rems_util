@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# Bulk set the application_form setting in GEN3 based on the current contents of REMS.
+# The metadata-sync-cronjob has to be triggered to make these reflect in the
+# GEN3 GUI after you run this.
+
+
+PROGRAM=NZ
+
+TFILE1=/tmp/t_$$_1.json
+TFILE2=/tmp/t_$$_2.json
+TFILE3=/tmp/t_$$_3.json
+
+rems_get res > $TFILE1 || exit 1
+rems_get item > $TFILE2 || exit 1
+
+trap 'rm -f $TFILE1 $TFILE2' EXIT
+
+# This command examines the resource data and pulls out the rems internal id ('.id')
+# along with the resource id ('.resid'), leaving out the AGDR_DATA_SUBMISSION
+# resource (which is used in the data supply workflow).
+# Then for each of these resources it goes off to find rems internal item id (iid) from the
+# catalog items data.
+
+jq -r '.[] | [.id, .resid] | @tsv' $TFILE1 | grep -v DATA_SUBMISSION | \
+while IFS=$'\t' read -r rid resid; do
+    iid_num=$(jq -r --arg rid "$rid" '[.[] | select(."resource-id" == ($rid | tonumber))] | length' < $TFILE2)
+    ((iid_num == 1)) || {
+        echo "One resource mapped to multiple items for $rid, $resid. Skipping."
+        continue
+    }
+    iid=$(jq -r --arg rid "$rid" '.[] | select(."resource-id" == ($rid | tonumber)) | .id' < $TFILE2)
+
+    # NZ-00018-AGDR00018 : We want this 00018 and the AGDR00018:
+    PROJECT_CODE=$(echo $resid | awk -F"-" '{print $2}')  
+    PROJECT_NAME=$(echo $resid | awk -F"-" '{print $3}')  
+
+    echo "$rid,$iid,$resid,$PROGRAM,$PROJECT_CODE,$PROJECT_NAME"
+
+    # Create the json file to post:
+    cat > $TFILE3 <<EOF
+{
+  "type": "dataset",
+  "submitter_id": "$PROJECT_NAME",
+  "projects": [{"code": "$PROJECT_CODE"}],
+  "application_form": "$REMS_URL/application?items=$iid"
+}
+EOF
+
+    #cat $TFILE3 
+    gen3_create_record.py -p $PROGRAM -j $PROJECT_CODE -f $TFILE3
+
+done
+
+trap 'rm -f $TFILE1 $TFILE2 $TFILE3' EXIT

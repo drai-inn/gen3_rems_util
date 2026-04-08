@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# adjust and apply the configmap in the same way
+# that happens in the .gitlab-ci.yaml
+
+MAP=~/agdr/agdr-rems/k8s/configmap.yaml
+cp -f $MAP ~/tmp/
+MAP=~/tmp/configmap.yaml
+
+: ${DB_PASSWORD:?}
+: ${KEYCLOAK_CLIENT_ID_PROD:?}
+
+sed -i "s/__DB_PASSWORD__/${DB_PASSWORD}/g" $MAP
+sed -i "s/__KEYCLOAK_CLIENT_ID_PROD__/${KEYCLOAK_CLIENT_ID_PROD}/g" $MAP
+
+kubectl apply -f $MAP

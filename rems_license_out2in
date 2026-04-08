@@ -1,0 +1,9 @@
+# To be used on the output of
+#    rems_get license <license_id>
+# in order to create something that can be used with rems_push
+# So, eg.
+#   rems_get license 1 | ./rems_license_out2in > license1.json
+# And then (maybe in a new/different system),
+#   rems_push license license1.json
+
+cat | jq '(del(.archived,.enabled,."form/id",."form/errors",."organization"."organization/short-name",."organization"."organization/name"))'

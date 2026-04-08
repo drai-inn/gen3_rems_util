@@ -1,0 +1,158 @@
+#!/bin/bash
+# matt.pestle@auckland.ac.nz
+# Feb 2026
+# Sync AGDR's GEN3 metadata over to REMS resources and application items.
+# This sync is only an insert - it doesn't update any names.
+# Name updates will need to be done manually.
+# This version also notes the rems internal item ID that gets created by REMS
+# for new datasets, and goes back to GEN3 and modifies the
+# "application_form" datapoint for the dataset, so that GEN3 can present
+# the "Apply for access" button's target appropriately.
+# That value will be
+#     "$REMS_URL/application?items=$IID"
+# Where IID is the internal REMS id given to the catalogue item
+#
+#
+# Environment:
+#    GEN3_METADATA_URL= something like
+#       https://data.agdr.org.nz/mds/metadata?data=True&_guid_type=discovery_metadata&limit=2000&offset=0
+# And so you can use rems_push ...
+#    REMS_API_BASE_URL =  # The base api url for REMS (eg. https://apply.test.agdr.org.nz/api)
+#    REMS_API_USER     =  # The REMS userid of the user with "owner" role
+#    REMS_API_KEY      =  # the key file containing the REMS api key to use
+#    REMS_ORG_ID       =  # the REMS org id to put on the new item/resource
+#    REMS_LICENSE_ID   =  # the REMS license id to put on the new resource
+#    REMS_WORKFLOW_ID  =  # the REMS workflow id to put on the new resource
+#    REMS_URN_PREFX    =  # the prefix to use in constructing URNs for the new resource
+#
+#    If ADJUST_GEN3_APPLICATION_URL=1, then gen3_create_record.py is called, which further requires:
+#    GEN3_URL          =  # the URL of the gen3 instance, eg https://data.agdr.org.nz
+#    GEN3_CRED_FILE    =  # the name of the file which contains the GEN3 api key
+########################################################
+
+: ${GEN3_METADATA_URL:?}
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_USER:?}
+: ${REMS_API_KEY:?}
+: ${REMS_ORG_ID:?}
+: ${REMS_LICENSE_ID:?}
+: ${REMS_WORKFLOW_ID:?}
+: ${REMS_URN_PREFIX:?}
+: ${REMS_URL:?}
+
+TFILE=/tmp/gen3_sync_$$.tmp
+
+# Function to retrieve resources from REMS
+
+echo "syncing metadata retrieved from"
+echo "    " $GEN3_METADATA_URL
+echo "to REMS at"
+echo "    " $REMS_API_BASE_URL
+echo
+
+GEN3=$(curl -s $GEN3_METADATA_URL) || {
+    echo error retrieving from $GEN3_METADATA_URL
+   	exit 1
+}
+REMS=$(rems_get res) || {
+    echo error retrieving REMS resources
+    echo check \$REMS_API_KEY or username \$REMS_API_USER
+    exit 1
+}
+KEYS=$(echo "$GEN3" | jq -r "keys[]")
+
+((RETURN_CODE=0))
+
+#Loop over the toplevel keys/projects
+#echo "$KEYS" | while read k
+while read -r k
+do
+    [[ -z "$k" ]] && continue
+    D=$(echo "$GEN3"  | jq ".[\"$k\"]")
+    R=$(echo "$D" | jq -r '.gen3_discovery.datasetdetails[] | to_entries[] | .value | "\(.dataset_id) \(.project_id) \(.name)"')
+
+    # Loop over the datasets in the project
+    #echo "$R" | while read i p d
+    while read -r i p d
+    do
+        [[ "$i" = "" ]] && {
+            echo "$k no dataset_id/name"
+            continue
+        }
+        #echo $k, $i, $d
+        URN=$REMS_URN_PREFIX:${p}-${i}
+
+        # Check if the URN already in REMS
+        echo "$REMS" | jq -r '.[]."resid"' | awk -v did="$URN" 'BEGIN {R=1}; $1 == did {print $0 " already present in REMS"; R=0}; END{ exit R}' && continue
+
+        # Now we have a record whose resource URN is not already in REMS
+        # The rest of this loop is dealing with it
+
+        # create the resource item and the catalogue item
+        echo "running rems_res_and_item $REMS_ORG_ID $REMS_LICENSE_ID $REMS_WORKFLOW_ID \"$URN\" \"$d\""
+        RSP=$(rems_res_and_item $REMS_ORG_ID $REMS_LICENSE_ID $REMS_WORKFLOW_ID "$URN" "$d") || {
+            echo "Error create resource and item for $URN"
+            echo "$RSP"
+            echo
+            ((RETURN_CODE+=1))
+            continue
+        }
+
+        # If we're not going to adjust the GEN3 application_url
+        # entry for this dataset, we're done and move on
+        ((ADJUST_GEN3_APPLICATION_URL:-0)) || continue
+
+        # These two have to be set in order to use gen3_create_record.py ...
+        : ${GEN3_URL:?}
+        : ${GEN3_CRED_FILE:?}
+
+
+        # Step 1 : Note the Rems internal ID of the new item, put into $IID
+        # The final step of rems_res_and_item is to print 3 fields: rems item ID, rems resource id, and URN
+        # We want the REMS item id so we can adjust the application_form entry in GEN3
+        IID=$(echo "$RSP" | awk '{print $1}')
+
+        # Step 2 : Note the PROGRAM and PROJECT_ID
+        # Now $p will have the .project_id, which seems to have the program (NZ)
+        # hardcoded into it already, so we'll split them out now:
+        PROGRAM=$(echo $p | awk -F"-" '{print $1}')
+        PROJECT_ID=$(echo $p | awk -F"-" '{print $2}')
+
+        # Step 3 : Create a json file
+        cat > $TFILE <<EOF
+{
+  "type": "dataset",
+  "submitter_id": "$i",
+  "projects": [{"code": "$PROJECT_ID"}],
+  "application_form": "$REMS_URL/application?items=$IID"
+}
+EOF
+
+        # Remove this file when we finish
+        trap 'rm -f $TFILE' EXIT
+
+        # Step 4 post the temporary JSON file to GEN3's api:
+        echo
+        echo
+        echo "Adjusting the GEN3 application_form data point with"
+        cat "$TFILE"
+        echo
+        echo
+        gen3_create_record.py -p $PROGRAM -j $PROJECT_ID -f $TFILE || {
+            ((RETURN_CODE+=1))
+        }
+        echo
+    done <<< "$R"
+done <<< "$KEYS"
+
+((RETURN_CODE>0)) && {
+    echo
+    echo
+    echo "There was a problem creating at least one resource or item, or adjusting GEN3"
+    echo "See the log above."
+    echo
+    echo
+}
+echo $0 finished in $SECONDS seconds
+echo
+exit $RETURN_CODE

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Delete all gen3 records of a given node_label
+
+: ${GEN3_METADATA_URL:?}
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_USER:?}
+: ${REMS_API_KEY:?}
+: ${REMS_ORG_ID:?}
+: ${REMS_LICENSE_ID:?}
+: ${REMS_WORKFLOW_ID:?}
+: ${REMS_URN_PREFIX:?}
+
+
+CRED_FILE=${GEN3_CRED_FILE:=~/keys/gen3_credentials.json}
+export GEN3_URL=${GEN3_URL:="https://browse.rakeiora.ac.nz"}
+
+function print_usage {
+	echo "Usage: $0 <program> <project> <node_label>"
+}
+
+(($# == 3)) || {
+	print_usage
+	exit
+}
+PROGRAM=$1
+PROJECT=$2
+node_label=$3
+TFILE=/tmp/delete_node_label.$$
+
+trap 'rm $TFILE' EXIT
+
+gen3_export_node_label.py -p $PROGRAM -j $PROJECT -l $node_label | \
+	jq -r  '.data[].id' > $TFILE
+
+while read EID
+do
+	gen3_delete_record.py -c $CRED_FILE -p $PROGRAM -j $PROJECT -e $EID
+done < $TFILE

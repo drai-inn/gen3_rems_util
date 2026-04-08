@@ -1,0 +1,87 @@
+#!/bin/bash
+# matt.pestle@auckland.ac.nz
+# May 2025
+#
+# Rems adjust
+# Push json data into rems "enabled" or "archived" api endpoints
+# Exit code does not reflect any errors that may have occurred in the get.
+# Caution (or adjustments) required if using in scripts and relying on exit status.
+
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_KEY:?}
+REMS_API_USER=${REMS_API_USER:=$USER}
+
+function print_usage {
+	#echo "Usage: $0 <org|lic|workflow|form|res|item|user> <id> <[-a|-u] | [-e|-d]> "
+	echo "Usage: $0 <res|item> <id> <[-a|-u] | [-e|-d]> "
+	echo "       Push a json file into a rems api endpoint"
+	echo "       -a archive"
+	echo "       -u unarchive"
+	echo "       -e enable"
+	echo "       -d disable"
+	echo "Try something like"
+	echo "rems_get  item | jq -r '.[] | [.id, .resid] | @csv' | grep kinghorn | awk -F, '{print \"rems_adjust item \" \$1 \" -d\"}'"
+}
+
+(($#==3)) || {
+	print_usage
+	exit 1
+}
+
+ID=$2
+ACTION=$3
+
+case $1 in
+#o*)
+#	E=organizations
+#	;;
+#l*)
+#	E=licenses
+#	;;
+#w*)
+#	E=workflows
+#	;;
+#f*)
+#	E=forms
+#	;;
+r*)
+	E=resources
+	;;
+i*)
+	E=catalogue-items
+	;;
+#u*)
+#	E=users
+#	;;
+*)
+	print_usage
+	exit 1
+	;;
+esac
+
+
+case $3 in
+	-a)	ACTION=archived
+		F="{ \"id\": $ID, \"archived\": true }"
+	;;
+	-u)	ACTION=archived
+		F="{ \"id\": $ID, \"archived\": false }"
+	;;
+	-e)	ACTION=enabled
+		F="{ \"id\": $ID, \"enabled\": true }"
+	;;
+	-d)	ACTION=enabled
+		F="{ \"id\": $ID, \"enabled\": false }"
+	;;
+esac
+
+
+URL=$REMS_API_BASE_URL/${E}/${ACTION}
+
+curl -s -X "PUT" \
+  $URL \
+  -H "x-rems-api-key: $REMS_API_KEY" \
+  -H "x-rems-user-id: $REMS_API_USER" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d "$F"

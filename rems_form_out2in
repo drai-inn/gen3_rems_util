@@ -1,0 +1,9 @@
+# To be used on the output of
+#    rems_get form <form_id>
+# in order to create something that can be used with rems_push
+# So, eg.
+#   rems_get form 1 | ./rems_form_out2in > form1.json
+# And then (maybe in a new/different system),
+#   rems_push form form1.json
+
+cat | jq '(del(.archived,.enabled,."form/id",."form/errors",."organization"."organization/short-name",."organization"."organization/name"))'

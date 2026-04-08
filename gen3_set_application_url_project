@@ -1,0 +1,71 @@
+#!/bin/bash
+#
+# Set the application_form for all datasets of a gen3 project
+#
+
+: ${GEN3_URL:?}
+: ${GEN3_CRED_FILE:?}
+: ${REMS_URL:?}
+: ${REMS_URN_PREFIX:?}
+
+PROGRAM=NZ
+
+(($#==2)) || {
+    echo "Usage: $0 <project_id> <rems_item_id(s)>"
+    echo "   eg: $0 00068 73"
+    echo "   eg: $0 00068 73,74"
+    exit 1
+}
+
+PROJECT_ID=$1
+ITEM_LIST="$2"
+
+# We'll strip off the $PROGRAM if supplied
+l=${#PROGRAM}
+((l+=1))
+
+case "$PROJECT_ID" in
+    ${PROGRAM}-*)
+        PROJECT_ID="${PROJECT_ID:$l}"
+        ;;
+    *)
+        ;;
+esac
+
+
+PROGRAM=NZ
+URN_BASE="$REMS_URN_PREFIX"
+URL="$REMS_URL/application?items=$ITEM_LIST"
+
+
+#select(."resource-id" == ($rid | tonumber))
+
+TMP_FILE=/tmp/gen3_json_$$.tmp
+
+J_LIST=$(gen3_export_node_label.py -p $PROGRAM -j $PROJECT_ID -l dataset) || exit 1
+#echo "$J_LIST" | jq .
+#echo
+
+JSON=$(echo "$J_LIST" | jq --arg url "$URL" '[.data[] | {
+      type, 
+      submitter_id, 
+      projects, 
+      application_form: ($url)
+    }]') || exit 1
+
+echo "$JSON" | grep -q "\"submitter_id\": null" && {
+    echo
+    echo
+    echo "Warning: $P has null submitter_id ... skipping"
+    echo
+    echo
+    continue
+}
+echo "Posting..."
+echo "$JSON"
+echo "$JSON" > $TMP_FILE
+gen3_create_record.py -p $PROGRAM -j $PROJECT_ID -f $TMP_FILE
+echo
+echo
+
+trap 'rm -f $TMP_FILE' EXIT

@@ -1,0 +1,23 @@
+# List the users in the REMS DB using the list-users command of the
+# rems.jar app, executed inside the pod.
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+REMS_APP=rems-app-
+
+N=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | wc -l)
+POD=$(kubectl get pods -n $REMS_NS --no-headers --field-selector=status.phase=Running | grep "$REMS_APP" | awk '{print $1}')
+
+((N==0)) && {
+    echo No pod matching "$REMS_APP"
+    exit 1
+}
+
+((N==1)) || {
+    echo Error: Multiple running pods matching "$REMS_APP"
+    exit 1
+}
+
+CMD="java -Drems.config=config/config.edn -jar rems.jar list-users"
+kubectl exec -it $POD -n $REMS_NS -- $CMD

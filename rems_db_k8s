@@ -1,0 +1,34 @@
+# Go directly into the rems postgres database
+# using the postgres user.
+# Make sure the agdr_db_password secret is available from
+#    gsecret get agdr_db_password
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+export GCLOUD_PROJECT=mygen3
+P=$(gsecret get agdr_db_password)
+
+REMS_NS=postgres
+
+echo KUBECONFIG=$KUBECONFIG
+echo Namespace=$REMS_NS
+
+PAT=postgres
+
+N=$(kubectl get pods -n $REMS_NS  --no-headers | grep $PAT | wc -l)
+
+((N==0)) && {
+    echo No pod matching "$PAT"
+    exit 1
+}
+
+((N==1)) || {
+    echo Multiple pods matching "$PAT"
+    kubectl get pods -n $REMS_NS  --no-headers | grep $PAT
+    exit 1
+}
+
+POD=$(kubectl get pods -n $REMS_NS  --no-headers | grep $PAT | awk '{print $1}')
+
+kubectl exec -it $POD -n $REMS_NS -- bash -c 'PGPASSWORD="'"$P"'" psql -U postgres -d rems'

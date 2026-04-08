@@ -1,0 +1,9 @@
+# To be used on the output of
+#    rems_get org <org_id>
+# in order to create something that can be used with rems_push
+# So, eg.
+#   rems_get org agdr | ./rems_org_out2in > org1.json
+# And then (maybe in a new/different system),
+#   rems_push org org1.json
+
+cat | jq '(del(.archived,.enabled,."form/id",."form/errors",."organization"."organization/short-name",."organization"."organization/name"))'

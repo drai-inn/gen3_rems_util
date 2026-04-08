@@ -1,0 +1,13 @@
+# Restart rems cleanly
+# Assumes it's deployed as deployment "rems-app"
+# in namesapce $REMS_NS
+
+: ${REMS_NS:?}
+: ${KUBECONFIG:?}
+
+echo Scaling down rems ...
+kubectl scale deployment rems-app -n $REMS_NS --replicas=0
+echo pause a few seconds ...
+sleep 5
+echo Scaling up rems ...
+kubectl scale deployment rems-app -n $REMS_NS --replicas=1

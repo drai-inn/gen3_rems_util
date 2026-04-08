@@ -1,0 +1,78 @@
+#!/bin/bash
+# matt.pestle@auckland.ac.nz
+# May 2025
+#
+# Rems push
+# Push json data into rems "create" api endpoints
+# Exit code does not reflect any errors that may have occurred in the get.
+# Caution (or adjustments) required if using in scripts and relying on exit status.
+
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_KEY:?}
+REMS_API_USER=${REMS_API_USER:=$USER}
+
+function print_usage {
+	echo "Usage: $0 <org|lic|workflow|form|res|item|user> <json_file>"
+	echo "       Push a json file into rems create api endpoint"
+}
+
+(($#==2)) || {
+	print_usage
+	exit 1
+}
+
+F=$2
+
+[[ -f "$F" ]] || {
+	echo "No such file $F"
+	exit 1
+}
+
+case $1 in
+o*)
+	E=organizations
+	;;
+l*)
+	E=licenses
+	;;
+w*)
+	E=workflows
+	;;
+f*)
+	E=forms
+	;;
+r*)
+	E=resources
+	;;
+i*)
+	E=catalogue-items
+	;;
+u*)
+	E=users
+	;;
+*)
+	print_usage
+	exit 1
+	;;
+esac
+
+URL=$REMS_API_BASE_URL/${E}/create
+
+R=$(curl -s -X "POST" \
+  $URL \
+  -H "x-rems-api-key: $REMS_API_KEY" \
+  -H "x-rems-user-id: $REMS_API_USER" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @$F) || {
+	echo error pushing $E to $URL using user $REMS_API_USER.
+	echo "$R"
+	exit 1
+}
+
+echo "$R" | grep -iq exception && {
+    echo "Problem posting json to create $E:"
+    echo "$R"
+    exit 1
+}
+echo "$R"

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+: ${GEN3_URL:?}
+: ${GEN3_CRED_FILE:?}
+: ${REMS_URL:?}
+
+WARNING_SLEEP_TIME=3
+
+PROGRAM=NZ
+
+P_LIST=$(gen3_ls_project.py -p $PROGRAM) || exit 1
+
+TMP_FILE=/tmp/gen3_json_$$.tmp
+
+for P in $P_LIST
+do
+    J_LIST=$(gen3_export_node_label.py -p $PROGRAM -j $P -l dataset) || exit 1
+    NUM_SETS=$(echo "$J_LIST" | jq --arg base "$URL" '.data | length')
+    ((NUM_SETS > 1)) && {
+        echo "$P has $NUM_SETS datasets"
+    }
+done

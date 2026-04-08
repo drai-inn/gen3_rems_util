@@ -1,0 +1,109 @@
+#!/bin/bash
+#
+# resource items and application items made together.
+# You need the resource item's internal item in order to make the
+# application item, so we do these two operations together, parsing
+# the output of the resource creation operation to use in the
+# item creation.
+# The workflow has presumably already been set up to be connected to a form
+# that applicants will need to fill out if they want access to the item.
+#
+# Arguments:
+#   ORG      = Organization ID
+#   LICENSE  = License ID - to get any license(s) people need to agree to
+#   WFID     = Workflow ID - to get handlers
+#   RESOURCE = resource ID
+#   ITEM     = item name
+
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_KEY:?}
+REMS_API_USER=${REMS_API_USER:=$USER}
+
+(($#==5 || $#==6)) || {
+    echo "Usage: $0 <org_id> <license_id> <workflow_id> <resource_id> <item_name> [form_id]"
+    exit 1
+}
+ORG="$1"
+LICENSE="$2"
+WFID="$3"
+resid="$4"
+nm="$5"
+
+# If the optional form_id is present, we'll add this clause to the resource json:
+(($#==6)) && {
+    FORM_CLAUSE=",\"form\": $6"
+} 
+
+TFILE=/tmp/rems_$$.json
+
+touch $TFILE || {
+    echo "Unable to create temporary file $TFILE. giving up."
+    exit 1
+}
+
+# Create the resource under the org with license(s)
+cat > "$TFILE" <<EOF
+{
+   "organization": { "organization/id": "$ORG" }
+  ,"resid": "$resid"
+  ,"licenses": [ $LICENSE ]
+}
+EOF
+
+trap '/bin/rm $TFILE' EXIT
+
+R=$(rems_push res "$TFILE") || {
+    echo "Error creating resource for $resid. Received response:"
+    echo "$R"
+    echo "Attempted to push json:"
+    cat "$TFILE"
+    exit 1
+}
+
+
+rid=$(echo "$R" | jq -r .id) || {
+    echo "Error creating resource for $resid. Received response:"
+    echo "$R"
+    echo "Attempted to push json:"
+    cat "$TFILE"
+    exit 1
+}
+
+# Create the application item under the org
+# with workflow (which should have been configured to use a form).
+
+#echo created resource $rid for "$resid"
+
+cat > "$TFILE" <<EOF
+  {
+    "localizations": {
+      "en": {
+        "title": "$nm"
+      }
+    }
+    ,"organization": {
+      "organization/id": "$ORG"
+    }
+    ,"wfid": $WFID
+    ,"resid": $rid
+    $FORM_CLAUSE
+  }
+EOF
+
+R=$(rems_push item "$TFILE") || {
+    echo "Error creating item for $resid. Attempted to push json"
+    cat "$TFILE"
+    exit 1
+}
+
+iid=$(echo "$R" | jq -r .id) || {
+    echo "Error creating item for $resid, after creating resource id $rid. Received response:"
+    echo "$R"
+    echo "Attempted to push json:"
+    cat "$TFILE"
+    exit 1
+}
+
+echo $iid " " $rid " " $resid
+exit 0
+#echo created item for "$resid"

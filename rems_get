@@ -1,0 +1,149 @@
+#!/bin/bash
+# matt.pestle@auckland.ac.nz
+# May 2025
+#
+# Rems Get
+# Retrieve data from rems via the api
+# All returned data comes to stdout, unless a single application is requested
+# in which case the PDF and zip file are produced from the REMS api too,
+# into files names based on the application number: app_NNN.[json|pdf|zip]
+#
+# Caution (or adjustments) required if using in scripts and relying on exit status.
+
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_KEY:?}
+REMS_API_USER=${REMS_API_USER:=$USER}
+
+function print_usage {
+	echo "Usage: $0 [-a] <org|lic|workflow|form|res|item|application|user|attachment|visas> [single id]"
+	echo "       Retrieve data from rems via"
+	echo "All returned data comes to stdout, unless a single application is requested."
+	echo "-a option gets archived and disabled ones too (for some)."
+	echo "Single application requests generate files app_NNN.json, app_NNN.pdf, and app_NNN.zip,"
+	echo "where NNN is the id of the application."
+	echo "With the visas option, the single ID is the user ID of the user whose visas you want."
+}
+
+ARGS=""
+[[ "$1" = "-a" ]] && {
+	ARGS="archived=true&disabled=true"
+	shift
+}
+
+(($#==2)) && {
+	ID_CLAUSE="/$2"
+	IDN="$2"
+	ARGS=""
+	((ID=1))
+}
+
+case $1 in
+o*)
+	E=organizations
+	;;
+u*)
+	E="users/active"
+	;;
+l*)
+	E=licenses
+	;;
+w*)
+	E=workflows
+	;;
+f*)
+	E=forms
+	;;
+r*)
+	E=resources
+	;;
+i*)
+	E=catalogue-items
+	;;
+ap*)
+	E=applications
+	((APP=1))
+	;;
+at*)
+	E=applications/attachment
+	((ATTACHMENT=1))
+	;;
+v*)
+	((VISAS=1))
+    : ${REMS_VISAS_URL:?}
+    # REMS_VISAS_URL=https://apply.dev.rakeiora.ac.nz:8443/rems/visas
+	;;
+*)
+	print_usage
+	exit 1
+	;;
+esac
+
+URL=$REMS_API_BASE_URL/${E}${ID_CLAUSE}?$ARGS
+
+((VISAS && ID)) && {
+	R=$(curl -s -X "GET" \
+	  $REMS_VISAS_URL \
+	  -H "api: $REMS_API_KEY" \
+	  -H "user: $IDN" | jq -r .ga4gh_passport_v1[])
+
+	for r in $R
+	do
+		echo "$r" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+	done
+	exit
+}
+
+((APP && ID)) && {
+	echo Individual application $IDN will be saved to app_${IDN}.json app_${IDN}.pdf and app_${IDN}.zip
+	[[ -f app_${IDN}.json ]] && {
+		echo Existing files will be overwritten. Ctrl-c now to cancel.
+		sleep 3
+	}
+
+	curl -s -X "GET" \
+	  $URL \
+	  -H "x-rems-api-key: $REMS_API_KEY" \
+	  -H "x-rems-user-id: $REMS_API_USER" \
+	  -H "accept: application/json" \
+		| jq . > app_${IDN}.json
+
+	URL=$REMS_API_BASE_URL/${E}${ID_CLAUSE}/attachments
+
+	curl -s -X "GET" \
+	  $URL \
+	  -H "x-rems-api-key: $REMS_API_KEY" \
+	  -H "x-rems-user-id: $REMS_API_USER" \
+	  -H "accept: application/json" > app_${IDN}.zip
+
+	URL=$REMS_API_BASE_URL/${E}${ID_CLAUSE}/pdf
+
+	curl -s -X "GET" \
+	  $URL \
+	  -H "x-rems-api-key: $REMS_API_KEY" \
+	  -H "x-rems-user-id: $REMS_API_USER" \
+	  -H "accept: application/json" > app_${IDN}.pdf
+
+	echo ... done
+	exit
+}
+
+((ATTACHMENT && ID)) && {
+curl -s -X "GET" \
+  $URL \
+  -H "x-rems-api-key: $REMS_API_KEY" \
+  -H "x-rems-user-id: $REMS_API_USER" \
+  -H "accept: application/json" \
+
+	exit
+}
+
+curl -s -X "GET" \
+  $URL \
+  -H "x-rems-api-key: $REMS_API_KEY" \
+  -H "x-rems-user-id: $REMS_API_USER" \
+  -H "accept: application/json" \
+	| jq . || {
+	echo error retrieving $E from $URL using user $REMS_API_USER.
+	echo check key \$REMS_API_KEY or username \$REMS_API_USER
+	exit 1
+}
