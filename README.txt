@@ -15,6 +15,7 @@ the calling environmment. See the variables defined in:
 - env.test
 
 Prerequisites:
+- users and api keys must be set up in both GEN3 and REMS (see env)
 - you must have k8s/kubectl installed to use the k8s related ones
 - these utilise jq quite a bit, so make sure that's installed and in your $PATH
 - these call each other, so put the directory holding these in your $PATH
