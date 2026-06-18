@@ -1,0 +1,91 @@
+#!/bin/bash
+# matt.pestle@auckland.ac.nz
+# Jun 2026
+#
+# Disable and archive a resource together with its catalogue item(s).
+# The inverse of rems_res_and_item, for our convention that a resource and its
+# catalogue item are created -- and retired -- as a 1:1 pair.
+#
+# Given one or more resource identifiers, each either the REMS internal resource
+# id (numeric) or the resource's resid/URN, this:
+#   1. finds the catalogue item(s) pointing at that resource,
+#   2. disables then archives each item -- REMS will not archive a resource that
+#      still has a live dependent item, so the item(s) must be retired first,
+#   3. disables then archives the resource.
+#
+# Relies on rems_get, rems_adjust and jq being in $PATH, and the usual REMS_API_*
+# environment (see env.test / env.prod).
+#
+# Usage: rems_archive_res_and_item <resource-id|resid> [<resource-id|resid> ...]
+
+: ${REMS_API_BASE_URL:?}
+: ${REMS_API_KEY:?}
+
+(($# >= 1)) || {
+    echo "Usage: $0 <resource-id|resid> [<resource-id|resid> ...]" >&2
+    echo "  resource-id : the REMS internal resource id (numeric)" >&2
+    echo "  resid       : the resource's resid/URN, e.g. urn:nz:agdr:dataset:NZ-00057-AGDR00057" >&2
+    exit 1
+}
+
+# Fetch the active (non-archived) resources and catalogue items once. These are
+# the only ones we can act on; anything already archived is skipped with a note.
+RES=$(rems_get res)    || { echo "Failed to fetch resources" >&2; exit 1; }
+ITEMS=$(rems_get item) || { echo "Failed to fetch catalogue items" >&2; exit 1; }
+
+# adjust <res|item> <id> <-d|-a>; returns non-zero if REMS reports failure.
+# (rems_adjust itself does not reflect API errors in its exit status, so we
+# inspect the JSON response.)
+adjust() {
+    local kind=$1 id=$2 action=$3 resp
+    resp=$(rems_adjust "$kind" "$id" "$action")
+    if echo "$resp" | jq -e '.success == true' >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "    ERROR adjusting $kind $id ($action): $resp" >&2
+    return 1
+}
+
+RC=0
+for KEY in "$@"; do
+    # Resolve KEY to an internal resource id (RID).
+    if [[ "$KEY" =~ ^[0-9]+$ ]]; then
+        RID=$(echo "$RES" | jq -r --argjson id "$KEY" '.[] | select(.id==$id) | .id' | head -1)
+    else
+        RID=$(echo "$RES" | jq -r --arg urn "$KEY" '.[] | select(.resid==$urn) | .id' | head -1)
+    fi
+
+    if [[ -z "$RID" ]]; then
+        echo "Resource '$KEY' not found among active resources (already archived?); skipping." >&2
+        ((RC++))
+        continue
+    fi
+
+    RESID=$(echo "$RES" | jq -r --argjson id "$RID" '.[] | select(.id==$id) | .resid' | head -1)
+    echo "Resource id $RID ($RESID):"
+
+    # Catalogue item(s) whose foreign key resource-id points at this resource.
+    IIDS=$(echo "$ITEMS" | jq -r --argjson rid "$RID" '.[] | select(.["resource-id"]==$rid) | .id')
+
+    if [[ -z "$IIDS" ]]; then
+        echo "  (no active catalogue item references this resource)"
+    fi
+
+    # 1 + 2: disable then archive each item (must precede the resource archive).
+    for IID in $IIDS; do
+        echo "  item $IID: disable + archive"
+        adjust item "$IID" -d || ((RC++))
+        adjust item "$IID" -a || ((RC++))
+    done
+
+    # 3: disable then archive the resource.
+    echo "  resource $RID: disable + archive"
+    adjust res "$RID" -d || ((RC++))
+    adjust res "$RID" -a || ((RC++))
+done
+
+((RC > 0)) && {
+    echo >&2
+    echo "Completed with $RC problem(s) -- see messages above." >&2
+}
+exit $RC
