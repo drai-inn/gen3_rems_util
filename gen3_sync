@@ -26,8 +26,9 @@
 #    REMS_URN_PREFX    =  # the prefix to use in constructing URNs for the new resource
 #
 #    If ADJUST_GEN3_APPLICATION_URL=1, then gen3_create_record.py is called, which further requires:
-#    GEN3_URL          =  # the URL of the gen3 instance, eg https://data.agdr.org.nz
-#    GEN3_CRED_FILE    =  # the name of the file which contains the GEN3 api key
+#    GEN3_URL           =  # the URL of the gen3 instance, eg https://data.agdr.org.nz
+#    GEN3_CLIENT_ID     =  # the client/secret under which the job connects to gen3
+#    GEN3_CLIENT_SECRET =  #
 ########################################################
 
 : ${GEN3_METADATA_URL:?}
@@ -39,6 +40,8 @@
 : ${REMS_WORKFLOW_ID:?}
 : ${REMS_URN_PREFIX:?}
 : ${REMS_URL:?}
+
+ADJUST_GEN3_APPLICATION_URL=${ADJUST_GEN3_APPLICATION_URL:-0}
 
 TFILE=/tmp/gen3_sync_$$.tmp
 
@@ -100,11 +103,12 @@ do
 
         # If we're not going to adjust the GEN3 application_url
         # entry for this dataset, we're done and move on
-        ((ADJUST_GEN3_APPLICATION_URL:-0)) || continue
+        ((ADJUST_GEN3_APPLICATION_URL)) || continue
 
-        # These two have to be set in order to use gen3_create_record.py ...
+        # These have to be set in order to use gen3_create_record.py ...
         : ${GEN3_URL:?}
-        : ${GEN3_CRED_FILE:?}
+        : ${GEN3_CLIENT_ID:?}
+        : ${GEN3_CLIENT_SECRET:?}
 
 
         # Step 1 : Note the Rems internal ID of the new item, put into $IID

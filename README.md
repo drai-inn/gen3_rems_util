@@ -30,6 +30,20 @@ the `GEN3_CRED_FILE` environment variable (or the `-c`/`--cred` argument), and
 the target instance from `GEN3_URL`. Download credentials from
 `$GEN3_URL/identity`, logged in as a user permitted to perform the operation.
 
+> ⚠️ **The personal API key expires after ~30 days.** The credentials you
+> download from `$GEN3_URL/identity` are a *personal refresh token* that GEN3
+> expires after about a month. That's fine for occasional manual use, but it
+> means any **unattended** use — cron jobs, scheduled syncs — will stop working
+> every 30 days until you log in and download a fresh key.
+>
+> For automation, set up a **non-expiring OAuth2 `client_credentials` service
+> client** instead, and point the scripts at it with the `GEN3_CLIENT_ID` and
+> `GEN3_CLIENT_SECRET` environment variables. When both are set, the scripts
+> authenticate as that service client and ignore `GEN3_CRED_FILE`; when they're
+> not, they fall back to the personal API key as above — so existing usage keeps
+> working unchanged. See **[SERVICE_CLIENT_SETUP.md](SERVICE_CLIENT_SETUP.md)**
+> for how to create and authorize one.
+
 ## REMS utilities
 
 | Script | Purpose |
@@ -135,7 +149,6 @@ python ./gen3_delete_projects.py -p NZ -j 99999 --yes
 | Script | Purpose |
 | --- | --- |
 | `gen3_cronjob_trigger` | Manually trigger a k8s cronjob |
-| `gen3_refresh_api_key.py` | Nice try, but doesn't work — GEN3 doesn't seem to allow this. Need to figure out admin users so we don't have to refresh an API key every month. |
 
 ### Site-specific: `application_url` scripts
 

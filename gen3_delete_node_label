@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Delete all gen3 records of a given node_label
 
 : ${GEN3_METADATA_URL:?}
 : ${REMS_API_BASE_URL:?}
@@ -12,7 +11,6 @@
 : ${REMS_URN_PREFIX:?}
 
 
-CRED_FILE=${GEN3_CRED_FILE:=~/keys/gen3_credentials.json}
 export GEN3_URL=${GEN3_URL:="https://browse.rakeiora.ac.nz"}
 
 function print_usage {
@@ -35,5 +33,5 @@ gen3_export_node_label.py -p $PROGRAM -j $PROJECT -l $node_label | \
 
 while read EID
 do
-	gen3_delete_record.py -c $CRED_FILE -p $PROGRAM -j $PROJECT -e $EID
+	gen3_delete_record.py -p $PROGRAM -j $PROJECT -e $EID
 done < $TFILE

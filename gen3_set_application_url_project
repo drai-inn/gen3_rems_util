@@ -4,9 +4,7 @@
 #
 
 : ${GEN3_URL:?}
-: ${GEN3_CRED_FILE:?}
 : ${REMS_URL:?}
-: ${REMS_URN_PREFIX:?}
 
 PROGRAM=NZ
 
@@ -34,7 +32,6 @@ esac
 
 
 PROGRAM=NZ
-URN_BASE="$REMS_URN_PREFIX"
 URL="$REMS_URL/application?items=$ITEM_LIST"
 
 

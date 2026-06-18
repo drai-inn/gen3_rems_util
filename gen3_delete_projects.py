@@ -8,18 +8,16 @@
 # By default it only prints what it WOULD do. Pass --yes (or type "yes" at the
 # prompt) to actually perform the deletions.
 #
-# First get your gen3 api credentials from the app into the file pointed to by
-# the -c argument, or the env variable GEN3_CRED_FILE (visit $GEN3_URL/identity).
-# Make sure you're logged in as a user who can delete data in the program.
+# Auth: see gen3_auth.py (client_credentials preferred, API key fallback).
+# Make sure you're authenticated as a principal that can delete data in the program.
 
-import json
 import argparse
-import os
 import sys
 import requests
+from gen3_auth import gen3_base_url, gen3_headers
 
 parser = argparse.ArgumentParser(description='Bulk delete named GEN3 projects in a program (empties each first).')
-parser.add_argument('--cred', '-c', dest='cred', help='GEN3 api credentials file', required=False)
+parser.add_argument('--cred', '-c', dest='cred', help='GEN3 api credentials file (legacy API key)', required=False)
 parser.add_argument('--program', '-p', dest='program', help='GEN3 program name', required=True)
 parser.add_argument('--project', '-j', dest='projects', required=True,
                     help='comma-separated list of projects to delete, eg: -j proj1,proj2,proj3')
@@ -34,19 +32,8 @@ if not requested_projects:
 	print("No projects given. Use -j proj1,proj2,proj3")
 	sys.exit(1)
 
-cred = args.cred
 program = args.program
-if cred is None:
-	cred = os.environ.get("GEN3_CRED_FILE")
-
-GEN3_URL = os.environ.get("GEN3_URL")
-if GEN3_URL is None or len(GEN3_URL) == 0:
-	print("Missing environment variable GEN3_URL. Eg:")
-	print("export GEN3_URL=\"https://browse.rakeiora.ac.nz\"")
-	sys.exit(1)
-
-with open(cred) as f:
-	key = json.load(f)
+GEN3_URL = gen3_base_url()
 
 SUBMISSION = GEN3_URL + "/api/v0/submission/"
 # GEN3 dictionary entries that are not deletable project records.
@@ -54,10 +41,8 @@ RESERVED = {"_all", "data_release", "root", "program", "project"}
 
 
 def get_token():
-	"""Fetch a fresh short-lived access token from the API key."""
-	r = requests.post(GEN3_URL + "/user/credentials/cdis/access_token", json=key)
-	r.raise_for_status()
-	return {'Authorization': 'bearer ' + r.json()['access_token']}
+	"""Fetch a fresh access token (via gen3_auth — client_credentials or API key)."""
+	return gen3_headers(args.cred)
 
 
 def list_projects(headers):

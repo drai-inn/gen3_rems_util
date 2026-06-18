@@ -4,7 +4,6 @@
 #
 
 : ${GEN3_URL:?}
-: ${GEN3_CRED_FILE:?}
 : ${REMS_URL:?}
 : ${REMS_URN_PREFIX:?}
 
