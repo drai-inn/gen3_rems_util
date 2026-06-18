@@ -3,5 +3,6 @@
   "code": "99995",
   "dbgap_accession_number": "99995",
   "name": "Test project 99995",
-  "availability_type": "Open"
+  "availability_type": "Open",
+  "detailed_description": "Test project 99995"
 }
