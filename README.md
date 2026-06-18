@@ -44,11 +44,25 @@ the target instance from `GEN3_URL`. Download credentials from
 > working unchanged. See **[SERVICE_CLIENT_SETUP.md](SERVICE_CLIENT_SETUP.md)**
 > for how to create and authorize one.
 
+## Conventions
+
+These scripts assume a working convention that **REMS resources and catalogue
+(application) items are kept in one-to-one correspondence** — each dataset is one
+resource paired with one catalogue item. They are created together with
+[`rems_res_and_item`](rems_res_and_item) and retired together with
+[`rems_archive_res_and_item`](rems_archive_res_and_item).
+
+REMS does not require this — a single resource can back several catalogue items,
+items can be reused across workflows/forms, and so on. The pairing is simply how
+this project manages the GEN3↔REMS dataset sync. If you reuse these scripts in a
+setup that doesn't follow the convention, bear that in mind.
+
 ## REMS utilities
 
 | Script | Purpose |
 | --- | --- |
 | `rems_adjust` | Enable/disable and archive/unarchive resources and items via the REMS API (call for usage) |
+| `rems_archive_res_and_item` | Disable and archive a resource together with its catalogue item(s) — the inverse of `rems_res_and_item`. Takes one or more resource ids or resids (call for usage) |
 | `rems_db_k8s` | Go directly into the postgres DB (see note about the secret above) |
 | `rems_db_shell_k8s` | Shell into the postgres pod |
 | `rems_form_out2in` | Retrieve a form and prepare it for pushing back in |
