@@ -1,40 +1,69 @@
 #!/bin/bash
-
-# Kick off a k8s cronjob
+#
+# Kick off a one-off run of a k8s CronJob.
+#
+# The created Job's name is printed to STDOUT (and nothing else is), so it can be
+# captured directly:
+#     J=$(gen3_cronjob_trigger etl-cronjob)
+#     kubectl -n <ns> logs -f -l job-name="$J" --all-containers --prefix
+#
+# Diagnostics and ready-to-run follow-up commands go to STDERR (same split as
+# gen3_auth.py), so they don't pollute the captured name.
+#
+# With -w, create the job and then stream its logs until it finishes.
 
 : ${KUBECONFIG:?}
 
-(($#==1)) || {
-    echo "Usage: $0 <cronjob-name>"
-    echo "Usage: $0 -l # to see candidates (matching \"cron\")"
+usage() {
+    echo "Usage: $0 [-w] <cronjob-name>   # trigger a run (-w: then tail its logs)" >&2
+    echo "       $0 -l                    # list cronjobs (all namespaces)"        >&2
     exit 1
 }
 
+FOLLOW=0
+case "$1" in
+    -l) kubectl get cronjobs -A; exit ;;
+    -w) FOLLOW=1; shift ;;
+    -h|--help) usage ;;
+    -*) usage ;;
+esac
+
+(($# == 1)) || usage
 CJ_NAME="$1"
 
-[[ "$CJ_NAME" = "-l" ]] && {
-    kubectl get cronjobs -A
-    exit
-}
-
-# Get the NS of this job
-NS=$(kubectl get cronjobs -A -o jsonpath='{.items[?(@.metadata.name=="'$CJ_NAME'")].metadata.namespace}')
-
-NUM=$(echo "$NS" | wc -l)
-((NUM == 0)) && {
-    echo "No cronjob found matching $CJ_NAME"
-    exit 1
-}
-((NUM > 1)) && {
-    echo "Multiple cronjobs found matching $CJ_NAME"
-    exit 1
-}
-
-[[ -z $NS ]] && {
-    echo "Can't find namespace"
-    exit 1
-}
+# Resolve the cronjob's namespace: one line per matching cronjob, so we can tell
+# 0 / 1 / many apart (the old wc -l check couldn't).
+NS=$(kubectl get cronjobs -A \
+        -o jsonpath='{range .items[?(@.metadata.name=="'"$CJ_NAME"'")]}{.metadata.namespace}{"\n"}{end}')
+case "$(printf '%s' "$NS" | grep -c .)" in
+    0) echo "No cronjob named '$CJ_NAME' found."                              >&2; exit 1 ;;
+    1) : ;;
+    *) echo "Multiple cronjobs named '$CJ_NAME' (namespaces: $NS). Be specific." >&2; exit 1 ;;
+esac
 
 JOB_NAME="${CJ_NAME}-manual-$(date +%F-%H%M%S)"
 
-kubectl create job --from=cronjob/$CJ_NAME "${JOB_NAME}" -n $NS
+# Send kubectl's "job.batch/... created" line to stderr so stdout stays just the name.
+kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" >&2 || exit 1
+
+{
+    echo
+    echo "namespace: $NS"
+    echo "job:       $JOB_NAME"
+    echo "logs:      kubectl -n $NS logs -f -l job-name=$JOB_NAME --all-containers --prefix"
+    echo "status:    kubectl -n $NS get job $JOB_NAME -w"
+} >&2
+
+# The one line on stdout: the bare job name.
+echo "$JOB_NAME"
+
+if ((FOLLOW)); then
+    echo "--- waiting for pod, then streaming logs (Ctrl-C to stop) ---" >&2
+    # Job pods run to completion (never "ready"), so just wait until one exists.
+    for _ in $(seq 1 30); do
+        [ -n "$(kubectl -n "$NS" get pod -l job-name="$JOB_NAME" \
+                  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)" ] && break
+        sleep 2
+    done
+    kubectl -n "$NS" logs -f -l job-name="$JOB_NAME" --all-containers --prefix >&2
+fi
