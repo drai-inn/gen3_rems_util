@@ -58,11 +58,15 @@ kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" >&2 || exit 1
 echo "$JOB_NAME"
 
 if ((FOLLOW)); then
-    echo "--- waiting for pod, then streaming logs (Ctrl-C to stop) ---" >&2
-    # Job pods run to completion (never "ready"), so just wait until one exists.
-    for _ in $(seq 1 30); do
-        [ -n "$(kubectl -n "$NS" get pod -l job-name="$JOB_NAME" \
-                  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)" ] && break
+    echo "--- waiting for container to start (image pull can be slow), then streaming logs (Ctrl-C to stop) ---" >&2
+    # Job pods run to completion (never "ready"), and logs -f can't attach while the
+    # container is still ContainerCreating. Wait until the pod leaves Pending -- i.e.
+    # the container is Running (or already Succeeded/Failed for a fast job).
+    for _ in $(seq 1 90); do
+        case "$(kubectl -n "$NS" get pod -l job-name="$JOB_NAME" \
+                  -o jsonpath='{.items[0].status.phase}' 2>/dev/null)" in
+            Running|Succeeded|Failed) break ;;
+        esac
         sleep 2
     done
     kubectl -n "$NS" logs -f -l job-name="$JOB_NAME" --all-containers --prefix >&2
