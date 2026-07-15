@@ -10,29 +10,39 @@
 # Diagnostics and ready-to-run follow-up commands go to STDERR (same split as
 # gen3_auth.py), so they don't pollute the captured name.
 #
-# With -w, create the job and then stream its logs until it finishes.
+# Options:
+#   -w                 create the job, then stream its logs until it finishes
+#   -e NAME=VALUE       override an existing env var on the job (repeatable);
+#                       e.g. -e ETL_FORCED=true to force a full ETL rebuild
+#   -l                 list cronjobs (all namespaces) and exit
 
 : ${KUBECONFIG:?}
 
 usage() {
-    echo "Usage: $0 [-w] <cronjob-name>   # trigger a run (-w: then tail its logs)" >&2
-    echo "       $0 -l                    # list cronjobs (all namespaces)"        >&2
+    echo "Usage: $0 [-w] [-e NAME=VALUE ...] <cronjob-name>   # trigger a run" >&2
+    echo "       $0 -l                                        # list cronjobs"  >&2
     exit 1
 }
 
 FOLLOW=0
-case "$1" in
-    -l) kubectl get cronjobs -A; exit ;;
-    -w) FOLLOW=1; shift ;;
-    -h|--help) usage ;;
-    -*) usage ;;
-esac
+declare -a ENVS=()
+while (( $# )); do
+    case "$1" in
+        -l) kubectl get cronjobs -A; exit ;;
+        -w) FOLLOW=1 ;;
+        -e) shift; [[ "${1:-}" == *=* ]] || usage; ENVS+=("$1") ;;
+        -h|--help) usage ;;
+        -*) usage ;;
+        *)  break ;;    # first positional = cronjob name
+    esac
+    shift
+done
 
-(($# == 1)) || usage
+(( $# == 1 )) || usage
 CJ_NAME="$1"
 
 # Resolve the cronjob's namespace: one line per matching cronjob, so we can tell
-# 0 / 1 / many apart (the old wc -l check couldn't).
+# 0 / 1 / many apart.
 NS=$(kubectl get cronjobs -A \
         -o jsonpath='{range .items[?(@.metadata.name=="'"$CJ_NAME"'")]}{.metadata.namespace}{"\n"}{end}')
 case "$(printf '%s' "$NS" | grep -c .)" in
@@ -43,8 +53,25 @@ esac
 
 JOB_NAME="${CJ_NAME}-manual-$(date +%F-%H%M%S)"
 
-# Send kubectl's "job.batch/... created" line to stderr so stdout stays just the name.
-kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" >&2 || exit 1
+if (( ${#ENVS[@]} )); then
+    # Env overrides: render the job from the cronjob, patch matching env values,
+    # then apply. (kubectl create --from can't override env, so we edit the spec.)
+    kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" --dry-run=client -o json \
+      | python3 -c '
+import sys, json
+ov = dict(kv.split("=", 1) for kv in sys.argv[1:])
+d = json.load(sys.stdin)
+for c in d["spec"]["template"]["spec"]["containers"]:
+    for e in c.get("env", []):
+        if e.get("name") in ov:
+            e["value"] = ov[e["name"]]
+json.dump(d, sys.stdout)
+' "${ENVS[@]}" \
+      | kubectl apply -n "$NS" -f - >&2 || exit 1
+    echo "   (env override: ${ENVS[*]})" >&2
+else
+    kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" >&2 || exit 1
+fi
 
 {
     echo
@@ -57,7 +84,7 @@ kubectl create job --from="cronjob/$CJ_NAME" "$JOB_NAME" -n "$NS" >&2 || exit 1
 # The one line on stdout: the bare job name.
 echo "$JOB_NAME"
 
-if ((FOLLOW)); then
+if (( FOLLOW )); then
     echo "--- waiting for container to start (image pull can be slow), then streaming logs (Ctrl-C to stop) ---" >&2
     # Job pods run to completion (never "ready"), and logs -f can't attach while the
     # container is still ContainerCreating. Wait until the pod leaves Pending -- i.e.
